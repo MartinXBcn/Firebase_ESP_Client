@@ -27,6 +27,21 @@
 
 #ifndef FIREBASE_TCP_Client_H
 #define FIREBASE_TCP_Client_H
+
+
+
+// -----------------------------
+// <MS> Logging
+#ifdef MS_FIREBASE_ESP_CLIENT_LOGGING
+#define ESP32DEBUGGING
+#define dbglev MS_FIREBASE_ESP_CLIENT_LOGGING
+#else
+#undef ESP32DEBUGGING
+#endif
+#include "ESP32Logger.h"
+
+
+
 #include <Arduino.h>
 #include "./FB_Error.h"
 #include "./FB_Const.h"
@@ -75,7 +90,7 @@ public:
     this->optional = optional;
   };
 
-private:
+// <MS> private:
   IPAddress ipAddress;
   IPAddress netMask;
   IPAddress defaultGateway;
@@ -658,34 +673,52 @@ public:
 
   size_t write(const uint8_t *data, size_t size)
   {
-    
-    if (!_tcp_client)
-      return setError(FIREBASE_ERROR_TCP_CLIENT_NOT_INITIALIZED);
-
-    if (!data || size == 0)
-      return setError(FIREBASE_ERROR_TCP_ERROR_SEND_REQUEST_FAILED);
-
-    if (!networkReady())
-      return setError(FIREBASE_ERROR_TCP_ERROR_NOT_CONNECTED);
-
-    if (!_tcp_client->connected() && !connect())
-      return setError(FIREBASE_ERROR_TCP_ERROR_CONNECTION_REFUSED);
-
-    int toSend = _chunkSize;
+    DBGCOD(char logbuf[64];)
+    DBGLOG(dbglev, "[Firebase_TCP_Client] >> data: %s, size: %u", 
+      asCharString(data, 0, logbuf, sizeof(logbuf)), size)
     int sent = 0;
+    int toSend = 0;
+
+    if (!_tcp_client) {
+      size = setError(FIREBASE_ERROR_TCP_CLIENT_NOT_INITIALIZED);
+      goto end;
+    }
+
+    if (!data || size == 0) {
+      size = setError(FIREBASE_ERROR_TCP_ERROR_SEND_REQUEST_FAILED);
+      goto end;
+    }
+
+    if (!networkReady()) {
+      size = setError(FIREBASE_ERROR_TCP_ERROR_NOT_CONNECTED);
+      goto end;
+    }
+
+    if (!_tcp_client->connected() && !connect()) {
+      size = setError(FIREBASE_ERROR_TCP_ERROR_CONNECTION_REFUSED);
+      goto end;
+    }
+
+    toSend = _chunkSize;
+    sent = 0;
     while (sent < (int)size)
     {
       if (sent + toSend > (int)size)
         toSend = size - sent;
 
-      if ((int)_tcp_client->write(data + sent, toSend) != toSend)
-        return FIREBASE_ERROR_TCP_ERROR_SEND_REQUEST_FAILED;
+      if ((int)_tcp_client->write(data + sent, toSend) != toSend) {
+        size = FIREBASE_ERROR_TCP_ERROR_SEND_REQUEST_FAILED;
+        goto end;
+      }
 
       sent += toSend;
     }
 
     setError(FIREBASE_ERROR_HTTP_CODE_OK);
 
+  end:
+    DBGCHK(Warn, (int)size < 0, "[Firebase_TCP_Client] error: %i", (int)size)
+    DBGLOG(dbglev, "[Firebase_TCP_Client] << return: %i", (int)size)
     return size;
   }
 
@@ -1123,7 +1156,7 @@ public:
   firebase_cert_type certType = firebase_cert_type_undefined;
   bool clockReady = false;
 
-private:
+// <MS> private:
   // lwIP TCP Keepalive idle in seconds.
   int _tcpKeepIdleSeconds = -1;
   // lwIP TCP Keepalive interval in seconds.

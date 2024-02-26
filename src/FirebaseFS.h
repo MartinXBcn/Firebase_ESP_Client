@@ -2,11 +2,21 @@
 #ifndef FirebaseFS_H
 #define FirebaseFS_H
 
+
+// <MS>
+// To check in using program if correct version of forked library is used.
+#define MS_FIREBASE_ESP_CLIENT_FORK_VERSION_INT 240022600
+
+
+#ifdef __MS__
+
+
 #include <Arduino.h>
 #include "./mbfs/MB_MCU.h"
 
 /**📍 Default Main Class */
 #define FIREBASE_ESP_CLIENT 1
+
 
 /** 📌 Predefined Build Options
  * ⛔ Use following build flag to disable all predefined options.
@@ -206,6 +216,10 @@
 #if __has_include("CustomFirebaseFS.h")
 #include "CustomFirebaseFS.h"
 #endif
+
+
+#endif
+
 
 #include "./core/Firebase_Build_Options.h"
 

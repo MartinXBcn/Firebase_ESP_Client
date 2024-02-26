@@ -33,6 +33,21 @@
 #include "./mbfs/MB_MCU.h"
 #include "Firebase.h"
 
+
+
+// -----------------------------
+// <MS> Logging
+#ifdef MS_FIREBASE_ESP_CLIENT_LOGGING
+#define ESP32DEBUGGING
+#define dbglvl MS_FIREBASE_ESP_CLIENT_LOGGING
+#else
+#undef ESP32DEBUGGING
+#endif
+#include "ESP32Logger.h"
+
+
+
+
 FIREBASE_CLASS::FIREBASE_CLASS()
 {
     Core.begin(nullptr, nullptr);
@@ -55,6 +70,8 @@ FIREBASE_CLASS::~FIREBASE_CLASS()
 
 void FIREBASE_CLASS::begin(FirebaseConfig *config, FirebaseAuth *auth)
 {
+    DBGLOG(dbglvl, "[FIREBASE_CLASS] >>")
+
     init(config, auth);
 
     if (!config->signer.test_mode)
@@ -105,16 +122,24 @@ void FIREBASE_CLASS::begin(FirebaseConfig *config, FirebaseAuth *auth)
 
     if (Core.internal.fb_rtoken_requested)
     {
-        if (config->signer.tokens.token_type == token_type_oauth2_access_token)
+        if (config->signer.tokens.token_type == token_type_oauth2_access_token) {
+            DBGLOG(dbglvl, "[FIREBASE_CLASS] requestTokens(...) ...")
             Core.requestTokens(true);
-        else
+        }
+        else {
+            DBGLOG(dbglvl, "[FIREBASE_CLASS] refreshToken(...) ...")
             Core.refreshToken();
+        }
 
         Core.internal.fb_rtoken_requested = false;
-        return;
+        goto end;
     }
 
+    DBGLOG(dbglvl, "[FIREBASE_CLASS] handleToken(...) ...")
     Core.handleToken();
+
+end:    
+    DBGLOG(dbglvl, "[FIREBASE_CLASS] <<")
 }
 
 struct token_info_t FIREBASE_CLASS::authTokenInfo()

@@ -64,7 +64,7 @@ public:
     FirebaseCore();
     ~FirebaseCore();
 
-private:
+// <MS> private:
     MB_FS mbfs;
     Utils ut;
     StringHelper sh;

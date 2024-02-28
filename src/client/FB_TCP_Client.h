@@ -594,8 +594,12 @@ public:
       }
     }
 
+#ifndef MS_ESP_SSLCLIENT_DEBUG_LEVEL
+#define MS_ESP_SSLCLIENT_DEBUG_LEVEL 0
+#endif
+
     _tcp_client->setClient(_basic_client);
-    _tcp_client->setDebugLevel(2);
+    _tcp_client->setDebugLevel(MS_ESP_SSLCLIENT_DEBUG_LEVEL);
     if (!_tcp_client->connect(_host.c_str(), _port))
       return setError(FIREBASE_ERROR_TCP_ERROR_CONNECTION_REFUSED);
 
@@ -673,11 +677,12 @@ public:
 
   size_t write(const uint8_t *data, size_t size)
   {
-    DBGCOD(char logbuf[64];)
-    DBGLOG(dbglev, "[Firebase_TCP_Client] >> data: %s, size: %u", 
-      asCharString(data, 0, logbuf, sizeof(logbuf)), size)
+    DBGCOD(char logbuf[1024];)
+    DBGLOG(dbglev, "+++[Firebase_TCP_Client] >> data: %s, size: %u", 
+      asCharString(data, 0, logbuf, size > sizeof(logbuf) ? sizeof(logbuf) : size), size)
     int sent = 0;
     int toSend = 0;
+    int sentReceived = 0;
 
     if (!_tcp_client) {
       size = setError(FIREBASE_ERROR_TCP_CLIENT_NOT_INITIALIZED);
@@ -706,7 +711,9 @@ public:
       if (sent + toSend > (int)size)
         toSend = size - sent;
 
-      if ((int)_tcp_client->write(data + sent, toSend) != toSend) {
+      sentReceived = (int)_tcp_client->write(data + sent, toSend);
+      if (sentReceived != toSend) {
+        DBGLOG(Error, "+++[Firebase_TCP_Client] sentReceived (%i) != toSend (%i)", sentReceived, toSend)
         size = FIREBASE_ERROR_TCP_ERROR_SEND_REQUEST_FAILED;
         goto end;
       }
@@ -717,8 +724,8 @@ public:
     setError(FIREBASE_ERROR_HTTP_CODE_OK);
 
   end:
-    DBGCHK(Warn, (int)size < 0, "[Firebase_TCP_Client] error: %i", (int)size)
-    DBGLOG(dbglev, "[Firebase_TCP_Client] << return: %i", (int)size)
+    DBGCHK(Warn, (int)size >= 0, "+++[Firebase_TCP_Client] error: %i", (int)size)
+    DBGLOG(dbglev, "+++[Firebase_TCP_Client] << return: %i", (int)size)
     return size;
   }
 
@@ -734,7 +741,7 @@ public:
    * @param data The data to send.
    * @return The size of data that was successfully sent or 0 for error.
    */
-  int send(const char *data) { return write((uint8_t *)data, strlen(data)); }
+   int send(const char *data) { return write((uint8_t *)data, strlen(data)); }
 
   int send(const char *data, size_t size) { return write((uint8_t *)data, size); }
 

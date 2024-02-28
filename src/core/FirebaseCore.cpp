@@ -29,9 +29,31 @@
 #ifndef FIREBASE_CORE_CPP
 #define FIREBASE_CORE_CPP
 
+
+
+// -----------------------------
+// <MS> Logging
+#ifdef MS_FIREBASE_ESP_CLIENT_LOGGING
+#define ESP32DEBUGGING
+#define MS_LOGGER_LEVEL MS_FIREBASE_ESP_CLIENT_LOGGING
+#else
+#undef ESP32DEBUGGING
+#endif
+#include "ESP32Logger.h"
+
+
+
+
+
 #include <Arduino.h>
 #include "./mbfs/MB_MCU.h"
 #include "FirebaseCore.h"
+
+
+// <MS>
+#include "ms_General.h"
+#include "ms_Firebase.h"
+
 
 FirebaseCore::FirebaseCore()
 {
@@ -368,20 +390,25 @@ bool FirebaseCore::isErrorCBTimeOut()
 
 bool FirebaseCore::handleToken()
 {
+    DBGLOG(Info, "[FirebaseCore] >>")
+    bool ret = false;
+    bool exp;
 
     // no config?, no auth? or no network?
-    if (!config || !auth)
-        return false;
+    if (!config || !auth) 
+        goto end;
 
     // bypass and set the token ready status for test mode
     if (config->signer.test_mode)
     {
         setTokenError(0);
-        return true;
+        ret = true;
+        goto end;
     }
 
     // time is up or expiey time reset or unset
-    bool exp = isExpired();
+    exp = isExpired();
+    DBGLOG(Info, "[FirebaseCore] isExpired(): %s", DBGB2S(exp))
 
     // Handle user assigned tokens (custom and access tokens)
 
@@ -394,7 +421,7 @@ bool FirebaseCore::handleToken()
             config->signer.tokens.status = token_status_uninitialized;
             config->signer.tokens.token_type = token_type_custom_token;
 
-            bool ret = false;
+            ret = false;
 
             if (readyToRequest())
             {
@@ -407,19 +434,22 @@ bool FirebaseCore::handleToken()
             }
 
             // return false for token request failed or true for success
-            return ret;
+            // return ret;
+            goto end;
         }
 
         // auth token is ready to use (unexpired)
         config->signer.tokens.status = token_status_ready;
-        return true;
+        ret = true;
+        goto end;
     }
     // if access token was set and unexpired, set the ready status
     else if (config->signer.accessTokenCustomSet && !exp)
     {
         config->signer.tokens.auth_type = firebase_pgm_str_45; // "Bearer "
         config->signer.tokens.status = token_status_ready;
-        return true;
+        ret = true;
+        goto end;
     }
 
     // Handle the signed jwt token generation, request and refresh the token
@@ -437,18 +467,26 @@ bool FirebaseCore::handleToken()
                     internal.refresh_token.length() == 0 &&
                     auth->user.email.length() == 0 &&
                     auth->user.password.length() == 0 &&
-                    config->signer.anonymous)
-                    return true;
+                    config->signer.anonymous) 
+                {
+                    ret = true;
+                    goto end;
+                }
 
                 // return when tcp client was used by other processes
-                if (internal.fb_processing)
-                    return false;
+                if (internal.fb_processing) {
+                    ret = false;
+                    goto end;
+                }
 
                 // refresh new auth token
-                if (readyToRefresh())
-                    return refreshToken();
+                if (readyToRefresh()) {
+                    ret = refreshToken();
+                    goto end;
+                }
             }
-            return false;
+            ret = false;
+            goto end;
         }
         // if it is new auth request
         else
@@ -459,15 +497,18 @@ bool FirebaseCore::handleToken()
                 if (readyToRequest())
                     tokenProcessingTask();
 
-                return false;
+                ret = false;
+                goto end;
             }
             // if auth request using OAuth 2.0 and custom token
             else
             {
                 // refresh the token when refresh token was assigned via setCustomToken (with non jwt token)
                 // and setAccessToken (fourth argument)
-                if (internal.refresh_token.length() > 0)
-                    return requestTokens(true);
+                if (internal.refresh_token.length() > 0) {
+                    ret = requestTokens(true);
+                    goto end;
+                }
 
                 // handle the jwt token processing
 
@@ -506,7 +547,8 @@ bool FirebaseCore::handleToken()
     if (config->signer.tokens.token_type == token_type_legacy_token)
     {
         setTokenError(0);
-        return true;
+        ret = true;
+        goto end;
     }
     else
     {
@@ -518,11 +560,17 @@ bool FirebaseCore::handleToken()
             sendTokenStatusCB();
         }
 
-        return config->signer.tokens.status == token_status_ready;
+        // return config->signer.tokens.status == token_status_ready;
     }
 
-    return config->signer.tokens.status == token_status_ready;
-}
+    ret = config->signer.tokens.status == token_status_ready;
+
+end:
+    DBGCOD(char logbuf[1024] = { 0 }; )
+    DBGLOG(Info, "[FirebaseCore] << return: %s (signer.tokens: %s)", 
+        DBGB2S(ret), MsFirebase::fbAuthTokenInfoAsChar(&(config->signer.tokens), logbuf, sizeof(logbuf)-1))
+    return ret;
+} // bool FirebaseCore::handleToken()
 
 void FirebaseCore::initJson()
 {
@@ -654,35 +702,48 @@ void FirebaseCore::readNTPTime()
 
 void FirebaseCore::tokenProcessingTask()
 {
+    DBGLOG(Info, "[FirebaseCore] >>")
+    bool ret = false;
+    time_t now;
+    int counter = 2;
+
     // All sessions should be closed
     freeClient(&tcpClient);
 
     for (size_t i = 0; i < Core.internal.sessions.size(); i++)
     {
-        if (Core.internal.sessions[i].status)
-            return;
+        if (Core.internal.sessions[i].status) {
+            DBGLOG(Info, "[FirebaseCore] abort-1, i: %u", i)
+            goto end;
+        }
     }
 
     // return when task is currently running
-    if (config->signer.tokenTaskRunning)
-        return;
+    if (config->signer.tokenTaskRunning) {
+        DBGLOG(Info, "[FirebaseCore] abort-2")
+        goto end;
+    }
 
-    bool ret = false;
+    ret = false;
 
     config->signer.tokenTaskRunning = true;
 
     timeBegin();
 
-    time_t now = getTime();
+    now = getTime();
 
-    while (!ret && config->signer.tokens.status != token_status_ready)
+    while ((counter > 0) && !ret && config->signer.tokens.status != token_status_ready)
     {
+        DBGLOG(Info, "[FirebaseCore] while (counter: %i) && (ret: %s) && (config->signer.tokens.status: %s)", 
+            counter, DBGB2S(ret), MsFirebase::fbEspAuthTokenStatusAsCharP(config->signer.tokens.status))
 
         FBUtils::idle();
         internal.fb_clock_rdy = timeReady();
 
         if (!internal.fb_clock_rdy && (config->cert.data != NULL || config->cert.file.length() > 0 || config->signer.tokens.token_type == token_type_oauth2_access_token || config->signer.tokens.token_type == token_type_custom_token))
         {
+            DBGLOG(Info, "[FirebaseCore] time ...")
+
             int code = FIREBASE_ERROR_NTP_TIMEOUT;
 
             if (_cli_type == firebase_client_type_external_gsm_client)
@@ -695,6 +756,8 @@ void FirebaseCore::tokenProcessingTask()
                 {
                     baseTs = _time;
                     setTimestamp(_time);
+                } else {
+                    DBGLOG(Warn, "[FirebaseCore] Returned time is 0!")
                 }
 
                 freeClient(&tcpClient);
@@ -726,19 +789,22 @@ void FirebaseCore::tokenProcessingTask()
 
             if (!internal.fb_clock_rdy)
             {
-                config->signer.tokenTaskRunning = false;
-                return;
+                goto end;
             }
         }
 
         if (config->signer.tokens.token_type == token_type_id_token)
         {
             // email/password verification and get id token
+            DBGLOG(Info, "[FirebaseCore] getIdToken(...) ...")
             ret = getIdToken(false, toStringPtr(_EMPTY_STR), toStringPtr(_EMPTY_STR));
+            DBGLOG(Info, "[FirebaseCore] getIdToken(...) returned: %s", DBGB2S(ret))
 
             // send error cb
-            if (!reconnect() && isErrorCBTimeOut())
+            if (!reconnect() && isErrorCBTimeOut()) {
+                DBGLOG(Warn, "[FirebaseCore] FIREBASE_ERROR_TCP_ERROR_CONNECTION_LOST-1")
                 handleTaskError(FIREBASE_ERROR_TCP_ERROR_CONNECTION_LOST);
+            }
         }
         else
         {
@@ -771,44 +837,75 @@ void FirebaseCore::tokenProcessingTask()
                 if (readyToRefresh())
                 {
                     // sending a new request
+                    DBGLOG(Info, "[FirebaseCore] requestTokens(...) ...")
                     ret = requestTokens(false);
+                    DBGLOG(Info, "[FirebaseCore] requestTokens(...) returned: %s", DBGB2S(ret))
                     config->signer.step = ret || getTime() - now > 3599 ? firebase_jwt_generation_step_begin : firebase_jwt_generation_step_exchange;
                     ret = true;
 
                     // send error cb
-                    if (!reconnect() && isErrorCBTimeOut())
+                    if (!reconnect() && isErrorCBTimeOut()) {
+                        DBGLOG(Warn, "[FirebaseCore] FIREBASE_ERROR_TCP_ERROR_CONNECTION_LOST-2")
                         handleTaskError(FIREBASE_ERROR_TCP_ERROR_CONNECTION_LOST);
+                    }
                 }
             }
         }
+
+        counter--;
+    } // while
+    if (counter == 0) {
+        DBGLOG(Warn, "[FirebaseCore] Timeout!")
+        ret = false;
     }
 
+end:
     // reset task running status
+    DBGLOG(Info, "[FirebaseCore] <<")
     config->signer.tokenTaskRunning = false;
-}
+} // void FirebaseCore::tokenProcessingTask()
 
 bool FirebaseCore::refreshToken()
 {
+    DBGLOG(Info, "[FirebaseCore] >>")
+    bool ret = false;
+
 #if !defined(USE_LEGACY_TOKEN_ONLY) && !defined(FIREBASE_USE_LEGACY_TOKEN_ONLY)
 
-    if (!config)
-        return false;
+    MB_String req;
+    struct firebase_auth_token_error_t error;
+    int httpCode;
+
+    if (!config) {
+        DBGLOG(Info, "[FirebaseCore] abort-1")
+        ret = false;
+        goto end;
+    }
 
     if (config->signer.tokens.status == token_status_on_request ||
         config->signer.tokens.status == token_status_on_refresh ||
         internal.fb_processing)
-        return false;
+    {
+        DBGLOG(Info, "[FirebaseCore] abort-2")
+        ret = false;
+        goto end;
+    }
 
-    if (internal.ltok_len > 0 || (internal.rtok_len == 0 && internal.atok_len == 0))
-        return false;
+    if (internal.ltok_len > 0 || (internal.rtok_len == 0 && internal.atok_len == 0)) {
+        DBGLOG(Info, "[FirebaseCore] abort-3")
+        ret = false;
+        goto end;
+    }
 
-    if (!initClient(firebase_auth_pgm_str_9 /* "securetoken" */, token_status_on_refresh))
-        return false;
+    if (!initClient(firebase_auth_pgm_str_9 /* "securetoken" */, token_status_on_refresh)) {
+        DBGLOG(Info, "[FirebaseCore] abort-4")
+        ret = false;
+        goto end;
+    }
 
     jsonPtr->add(pgm2Str(firebase_auth_pgm_str_11 /* "grantType" */), pgm2Str(firebase_auth_pgm_str_12 /* "refresh_token" */));
     jsonPtr->add(pgm2Str(firebase_auth_pgm_str_13 /* "refreshToken" */), internal.refresh_token.c_str());
 
-    MB_String req;
     hh.addRequestHeaderFirst(req, http_post);
 
     req += firebase_auth_pgm_str_10; // "/v1/token?Key=""
@@ -823,15 +920,18 @@ bool FirebaseCore::refreshToken()
 
     req += jsonPtr->raw(); // {"grantType":"refresh_token","refreshToken":"<refresh token>"}
 
+    DBGLOG(Info, "[FirebaseCore] tcpClient->send('%s') ...", req.c_str())
     tcpClient->send(req.c_str());
 
     req.clear();
-    if (response_code < 0)
-        return handleTaskError(FIREBASE_ERROR_TCP_ERROR_CONNECTION_LOST);
 
-    struct firebase_auth_token_error_t error;
+    if (response_code < 0) {
+        DBGLOG(Warn, "[FirebaseCore] abort-5, response_code: %i", response_code)
+        ret = handleTaskError(FIREBASE_ERROR_TCP_ERROR_CONNECTION_LOST);
+        goto end;
+    }
 
-    int httpCode = FIREBASE_ERROR_TCP_RESPONSE_PAYLOAD_READ_TIMED_OUT;
+    httpCode = FIREBASE_ERROR_TCP_RESPONSE_PAYLOAD_READ_TIMED_OUT;
     if (handleTokenResponse(httpCode))
     {
         if (jh.parse(jsonPtr, resultPtr, firebase_storage_ss_pgm_str_16 /* "error/code" */))
@@ -873,17 +973,27 @@ bool FirebaseCore::refreshToken()
             if (jh.parse(jsonPtr, resultPtr, firebase_auth_pgm_str_16 /* "user_id" */))
                 auth->token.uid = resultPtr->to<const char *>();
 
-            return handleTaskError(FIREBASE_ERROR_TOKEN_COMPLETE_NOTIFY);
+            ret = handleTaskError(FIREBASE_ERROR_TOKEN_COMPLETE_NOTIFY);
+            DBGLOG(Warn, "[FirebaseCore] FIREBASE_ERROR_TOKEN_COMPLETE_NOTIFY")
+            goto end;
         }
 
-        return handleTaskError(FIREBASE_ERROR_TOKEN_ERROR_UNNOTIFY);
+        ret = handleTaskError(FIREBASE_ERROR_TOKEN_ERROR_UNNOTIFY);
+        DBGLOG(Warn, "[FirebaseCore] FIREBASE_ERROR_TOKEN_ERROR_UNNOTIFY")
+        goto end;
     }
 
-    return handleTaskError(FIREBASE_ERROR_HTTP_CODE_REQUEST_TIMEOUT, httpCode);
+    ret = handleTaskError(FIREBASE_ERROR_HTTP_CODE_REQUEST_TIMEOUT, httpCode);
+    DBGLOG(Warn, "[FirebaseCore] FIREBASE_ERROR_HTTP_CODE_REQUEST_TIMEOUT")
+    goto end;
 
 #endif
 
-    return true;
+    ret = true;
+
+end:
+    DBGLOG(Info, "[FirebaseCore] << return: %s", DBGB2S(ret))
+    return ret;
 }
 
 void FirebaseCore::newClient(Firebase_TCP_Client **client)
@@ -1047,36 +1157,46 @@ void FirebaseCore::sendTokenStatusCB()
 
 bool FirebaseCore::handleTokenResponse(int &httpCode)
 {
-
-    if (!reconnect(tcpClient, nullptr))
-        return false;
+    DBGLOG(Info, "[FirebaseCore] >> httpCode: %i", httpCode)
 
     MB_String header, payload;
-
     struct server_response_data_t response;
     struct firebase_tcp_response_handler_t tcpHandler;
+    bool complete = false;
+    char *pChunk;
+    bool ret = false;
+
+    if (!reconnect(tcpClient, nullptr)) {
+        DBGLOG(Info, "[FirebaseCore] abort-1")
+        ret = false;
+        goto end;
+    }
 
     hh.intTCPHandler(tcpClient, tcpHandler, 2048, 2048, nullptr, false);
 
     while (tcpClient->connected() && tcpClient->available() == 0)
     {
         FBUtils::idle();
-        if (!reconnect(tcpClient, nullptr, tcpHandler.dataTime))
-            return false;
+        if (!reconnect(tcpClient, nullptr, tcpHandler.dataTime)) {
+            DBGLOG(Info, "[FirebaseCore] abort-2")
+            ret = false;
+            goto end;
+        }
     }
-
-    bool complete = false;
 
     tcpHandler.chunkBufSize = tcpHandler.defaultChunkSize;
 
-    char *pChunk = reinterpret_cast<char *>(mbfs.newP(tcpHandler.chunkBufSize + 1));
+    pChunk = reinterpret_cast<char *>(mbfs.newP(tcpHandler.chunkBufSize + 1));
 
     while (tcpHandler.available() || !complete)
     {
         FBUtils::idle();
 
-        if (!reconnect(tcpClient, nullptr, tcpHandler.dataTime))
-            return false;
+        if (!reconnect(tcpClient, nullptr, tcpHandler.dataTime)) {
+            DBGLOG(Info, "[FirebaseCore] abort-3")
+            ret = false;
+            goto end;
+        }
 
         if (!hh.readStatusLine(&sh, &mbfs, tcpClient, tcpHandler, response))
         {
@@ -1134,17 +1254,29 @@ bool FirebaseCore::handleTokenResponse(int &httpCode)
         tcpClient->stop();
 
     httpCode = response.httpCode;
-
-    if (jsonPtr && payload.length() > 0 && !response.noContent)
+    
+    if (jsonPtr  && !response.noContent)
     {
-        // Just a simple JSON which is suitable for parsing in low memory device
-        jsonPtr->setJsonData(payload.c_str());
-        payload.clear();
-        return true;
+        if (payload.length() > 0) {
+            // Just a simple JSON which is suitable for parsing in low memory device
+            jsonPtr->setJsonData(payload.c_str());
+            payload.clear();
+            ret = true;
+            DBGCOD(String s; jsonPtr->toString(s, false);)
+            DBGLOG(Info, "[FirebaseCore] received payload: %s", s.c_str())
+        } else {
+            DBGLOG(Warn, "[FirebaseCore] payload is empty!")
+            ret = false;
+        }
+        goto end;
     }
 
-    return false;
-}
+    ret = false;
+
+end:
+    DBGLOG(Info, "[FirebaseCore] << return: %s, httpCode: %i", DBGB2S(ret), httpCode)
+    return ret;
+} // bool FirebaseCore::handleTokenResponse(...)
 
 bool FirebaseCore::handleError(int code, const char *descr, int errNum)
 {
@@ -1360,14 +1492,24 @@ bool FirebaseCore::createJWT()
 
 bool FirebaseCore::getIdToken(bool createUser, MB_StringPtr email, MB_StringPtr password)
 {
+    DBGLOG(Info, "[FirebaseCore] >> createUser: %s", DBGB2S(createUser))
+    bool ret = false;
+
 #if !defined(USE_LEGACY_TOKEN_ONLY) && !defined(FIREBASE_USE_LEGACY_TOKEN_ONLY)
+
+    MB_String req;
+    int httpCode;
 
     config->signer.signup = false;
 
     if (config->signer.tokens.status == token_status_on_request ||
         config->signer.tokens.status == token_status_on_refresh ||
         internal.fb_processing)
-        return false;
+    {
+        DBGLOG(Info, "[FirebaseCore] abort-1")
+        ret = false;
+        goto end;
+    }
 
     if (!initClient(createUser
                         ? firebase_auth_pgm_str_23 /* "identitytoolkit" */
@@ -1375,7 +1517,11 @@ bool FirebaseCore::getIdToken(bool createUser, MB_StringPtr email, MB_StringPtr 
                     createUser
                         ? token_status_uninitialized
                         : token_status_on_request))
-        return false;
+    {
+        DBGLOG(Info, "[FirebaseCore] abort-2")
+        ret = false;
+        goto end;
+    }
 
     if (createUser)
     {
@@ -1396,7 +1542,6 @@ bool FirebaseCore::getIdToken(bool createUser, MB_StringPtr email, MB_StringPtr 
 
     jsonPtr->add(pgm2Str(firebase_auth_pgm_str_26 /* "returnSecureToken" */), true);
 
-    MB_String req;
     hh.addRequestHeaderFirst(req, http_post);
 
     if (createUser)
@@ -1421,17 +1566,25 @@ bool FirebaseCore::getIdToken(bool createUser, MB_StringPtr email, MB_StringPtr 
     hh.addNewLine(req);
     req += jsonPtr->raw();
 
+    DBGLOG(Info, "[FirebaseCore] tcpClient->send('%s') ...", req.c_str())
     tcpClient->send(req.c_str());
+    DBGLOG(Info, "[FirebaseCore] response_code: %i", response_code)
 
     req.clear();
 
-    if (response_code < 0)
-        return handleTaskError(FIREBASE_ERROR_TCP_ERROR_CONNECTION_LOST);
+    if (response_code < 0) {
+        DBGLOG(Warn, "[FirebaseCore] abort-3, response_code: %i", response_code)
+        ret = handleTaskError(FIREBASE_ERROR_TCP_ERROR_CONNECTION_LOST);
+        goto end;
+    }
 
     jsonPtr->clear();
 
-    int httpCode = FIREBASE_ERROR_TCP_RESPONSE_PAYLOAD_READ_TIMED_OUT;
-    if (handleTokenResponse(httpCode))
+    httpCode = FIREBASE_ERROR_TCP_RESPONSE_PAYLOAD_READ_TIMED_OUT;
+    ret = handleTokenResponse(httpCode);
+    DBGLOG(Info, "[FirebaseCore] handleTokenResponse(...) returned: %s, httpCode: %i", DBGB2S(ret), httpCode)
+
+    if (ret)
     {
         struct firebase_auth_token_error_t error;
 
@@ -1457,6 +1610,8 @@ bool FirebaseCore::getIdToken(bool createUser, MB_StringPtr email, MB_StringPtr 
             if (error.code != 0)
                 sendTokenStatusCB();
         }
+
+        DBGLOG(Info, "[FirebaseCore] error.code: %i", error.code)
 
         if (error.code == 0)
         {
@@ -1488,17 +1643,28 @@ bool FirebaseCore::getIdToken(bool createUser, MB_StringPtr email, MB_StringPtr 
             if (jh.parse(jsonPtr, resultPtr, firebase_auth_pgm_str_48 /* "localId" */))
                 auth->token.uid = resultPtr->to<const char *>();
 
-            if (!createUser)
-                return handleTaskError(FIREBASE_ERROR_TOKEN_COMPLETE_NOTIFY);
-            else
-                return handleTaskError(FIREBASE_ERROR_TOKEN_COMPLETE_UNNOTIFY);
+            if (!createUser) {
+                ret = handleTaskError(FIREBASE_ERROR_TOKEN_COMPLETE_NOTIFY);
+                DBGLOG(Warn, "[FirebaseCore] FIREBASE_ERROR_TOKEN_COMPLETE_NOTIFY")
+                goto end;
+            } else {
+                ret = handleTaskError(FIREBASE_ERROR_TOKEN_COMPLETE_UNNOTIFY);
+                DBGLOG(Warn, "[FirebaseCore] FIREBASE_ERROR_TOKEN_ERROR_UNNOTIFY")
+                goto end;
+            }
         }
     }
 
-    return handleTaskError(FIREBASE_ERROR_HTTP_CODE_REQUEST_TIMEOUT, httpCode);
+    ret = handleTaskError(FIREBASE_ERROR_HTTP_CODE_REQUEST_TIMEOUT, httpCode);
+    DBGLOG(Warn, "[FirebaseCore] FIREBASE_ERROR_HTTP_CODE_REQUEST_TIMEOUT, httpCode: %i", httpCode)
+    goto end;
 
 #endif
-    return true;
+    ret = true;
+
+end:
+    DBGLOG(Info, "[FirebaseCore] << return: %s", DBGB2S(ret))
+    return ret;
 }
 
 bool FirebaseCore::deleteIdToken(MB_StringPtr idToken)
@@ -1622,9 +1788,12 @@ void FirebaseCore::closeSession(Firebase_TCP_Client *client, firebase_session_in
 
 bool FirebaseCore::reconnect(Firebase_TCP_Client *client, firebase_session_info_t *session, unsigned long dataTime)
 {
+    DBGLOG(Debug, "[FirebaseCore] >>")
 
-    if (!client)
-        return false;
+    if (!client) {
+        networkStatus = false;
+        goto end;
+    }
 
     client->setConfig(config, &mbfs);
 
@@ -1649,7 +1818,8 @@ bool FirebaseCore::reconnect(Firebase_TCP_Client *client, firebase_session_info_
                 errorToString(session->response.code, session->error);
                 closeSession(client, session);
             }
-            return false;
+            networkStatus = false;
+            goto end;
         }
     }
 
@@ -1685,6 +1855,9 @@ bool FirebaseCore::reconnect(Firebase_TCP_Client *client, firebase_session_info_
     if (!networkStatus && session)
         session->response.code = FIREBASE_ERROR_TCP_ERROR_CONNECTION_LOST;
 
+end:
+    DBGCHK(Warn, networkStatus, "[FirebaseCore] networkStatus: false")
+    DBGLOG(Debug, "[FirebaseCore] << return networkStatus: %s", DBGB2S(networkStatus))
     return networkStatus;
 }
 
@@ -1785,21 +1958,33 @@ bool FirebaseCore::initClient(PGM_P subDomain, firebase_auth_token_status status
 
 bool FirebaseCore::requestTokens(bool refresh)
 {
+    DBGLOG(Info, "[FirebaseCore] >> refresh: %s", DBGB2S(refresh))
+    DBGCOD(char logbuf[1024] = { 0 };)
+    bool ret = false;
 
 #if !defined(USE_LEGACY_TOKEN_ONLY) && !defined(FIREBASE_USE_LEGACY_TOKEN_ONLY)
 
     time_t now = getTime();
+    MB_String req;
+    struct firebase_auth_token_error_t error;
+    int httpCode;
 
     if (config->signer.tokens.status == token_status_on_request ||
         config->signer.tokens.status == token_status_on_refresh ||
         ((unsigned long)now < FIREBASE_DEFAULT_TS && !refresh && !config->signer.customTokenCustomSet) ||
         internal.fb_processing)
-        return false;
+    {        
+        DBGLOG(Info, "[FirebaseCore] abort-1")
+        ret = false;
+        goto end;
+    }
 
-    if (!initClient(firebase_pgm_str_61 /* "www" */, refresh ? token_status_on_refresh : token_status_on_request))
-        return false;
+    if (!initClient(firebase_pgm_str_61 /* "www" */, refresh ? token_status_on_refresh : token_status_on_request)) {
+        DBGLOG(Info, "[FirebaseCore] abort-2")
+        ret = false;
+        goto end;
+    }
 
-    MB_String req;
     hh.addRequestHeaderFirst(req, http_post);
 
     if (config->signer.tokens.token_type == token_type_custom_token)
@@ -1854,16 +2039,20 @@ bool FirebaseCore::requestTokens(bool refresh)
 
     req += jsonPtr->raw();
 
+    DBGLOG(Info, "[FirebaseCore] tcpClient->send('%s') ...", req.c_str())
     tcpClient->send(req.c_str());
+    DBGLOG(Info, "[FirebaseCore] response_code: %i", response_code)
 
     req.clear();
 
-    if (response_code < 0)
-        return handleTaskError(FIREBASE_ERROR_TCP_ERROR_CONNECTION_LOST);
+    if (response_code < 0) {
+        DBGLOG(Warn, "[FirebaseCore] abort-3, response_code: %i", response_code)
+        ret = handleTaskError(FIREBASE_ERROR_TCP_ERROR_CONNECTION_LOST);
+        goto end;
+    }
 
-    struct firebase_auth_token_error_t error;
 
-    int httpCode = FIREBASE_ERROR_TCP_RESPONSE_PAYLOAD_READ_TIMED_OUT;
+    httpCode = FIREBASE_ERROR_TCP_RESPONSE_PAYLOAD_READ_TIMED_OUT;
     if (handleTokenResponse(httpCode))
     {
         config->signer.tokens.jwt.clear();
@@ -1901,6 +2090,8 @@ bool FirebaseCore::requestTokens(bool refresh)
         if (error.code != 0)
             sendTokenStatusCB();
 
+        DBGLOG(Info, "[FirebaseCore] error.code: %i", error.code)
+
         if (error.code == 0)
         {
             if (config->signer.tokens.token_type == token_type_custom_token)
@@ -1936,17 +2127,27 @@ bool FirebaseCore::requestTokens(bool refresh)
                 if (jh.parse(jsonPtr, resultPtr, firebase_auth_pgm_str_15 /* "expires_in" */))
                     getExpiration(resultPtr->to<const char *>());
             }
-            return handleTaskError(FIREBASE_ERROR_TOKEN_COMPLETE_NOTIFY);
+            ret = handleTaskError(FIREBASE_ERROR_TOKEN_COMPLETE_NOTIFY);
+            DBGLOG(Warn, "[FirebaseCore] FIREBASE_ERROR_TOKEN_COMPLETE_NOTIFY")
+            goto end;
         }
-        return handleTaskError(FIREBASE_ERROR_TOKEN_ERROR_UNNOTIFY);
+        ret = handleTaskError(FIREBASE_ERROR_TOKEN_ERROR_UNNOTIFY);
+        DBGLOG(Warn, "[FirebaseCore] FIREBASE_ERROR_TOKEN_ERROR_UNNOTIFY")
+        goto end;
     }
 
-    return handleTaskError(FIREBASE_ERROR_HTTP_CODE_REQUEST_TIMEOUT, httpCode);
+    ret = handleTaskError(FIREBASE_ERROR_HTTP_CODE_REQUEST_TIMEOUT, httpCode);
+    DBGLOG(Warn, "[FirebaseCore] FIREBASE_ERROR_HTTP_CODE_REQUEST_TIMEOUT, httpCode: %i", httpCode)
+    goto end;
 
 #endif
+    ret = true;
 
-    return true;
-}
+end:
+    DBGLOG(Info, "[FirebaseCore] << return: %s (signer.tokens: %s)", 
+        DBGB2S(ret), MsFirebase::fbAuthTokenInfoAsChar(&(config->signer.tokens), logbuf, sizeof(logbuf)))
+    return ret;
+} // bool FirebaseCore::requestTokens(...)
 
 void FirebaseCore::getExpiration(const char *exp)
 {

@@ -34,6 +34,21 @@
 #ifndef BSSL_SSL_CLIENT_CPP
 #define BSSL_SSL_CLIENT_CPP
 
+
+// -----------------------------
+// <MS> Logging
+#ifdef MS_FIREBASE_ESP_CLIENT_LOGGING
+#define ESP32DEBUGGING
+#define MS_LOGGER_LEVEL MS_FIREBASE_ESP_CLIENT_LOGGING
+#else
+#undef ESP32DEBUGGING
+#endif
+#include "ESP32Logger.h"
+
+#include "ms_General.h"
+
+
+
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wvla"
@@ -273,40 +288,62 @@ int BSSL_SSL_Client::read(uint8_t *buf, size_t size)
 
 size_t BSSL_SSL_Client::write(const uint8_t *buf, size_t size)
 {
-    if (!mIsClientInitialized(false))
-        return 0;
-
-    if (!_secure)
-        return _basic_client->write(buf, size);
+    DBGCOD(char log[128]; asCharString(buf, 0, log, size > sizeof(log)-1 ? sizeof(log)-1 : size);)
+    DBGLOG(Info, "[BSSL_SSL_Client] >> buf: %s, size: %u", log, size)
 
     const char *func_name = __func__;
+    size_t alen;
+    unsigned char *br_buf;
+    size_t cur_idx;
+
+    if (!mIsClientInitialized(false)) {
+        DBGLOG(Error, "[BSSL_SSL_Client] Abort, client not initialized!")
+        size = 0;
+        goto end;
+    }
+
+    if (!_secure) {
+        DBGLOG(Warn, "[BSSL_SSL_Client] Not secure! Forwarding to basic client.")
+        size = _basic_client->write(buf, size);
+        goto end;
+    }
+
 #if defined(ESP_SSLCLIENT_ENABLE_DEBUG)
     // super debug
     if (_debug_level >= esp_ssl_debug_dump)
         ESP_SSLCLIENT_DEBUG_PORT.write(buf, size);
 #endif
     // check if the socket is still open and such
-    if (!mSoftConnected(func_name) || !buf || !size)
-        return 0;
+    if (!mSoftConnected(func_name) || !buf || !size) {
+        DBGLOG(Error, "[BSSL_SSL_Client] Abort, not 'soft connected'!")
+        size = 0;
+        goto end;
+    }
+        
     // wait until bearssl is ready to send
     if (mRunUntil(BR_SSL_SENDAPP) < 0)
     {
 #if defined(ESP_SSLCLIENT_ENABLE_DEBUG)
         esp_ssl_debug_print(PSTR("Failed while waiting for the engine to enter BR_SSL_SENDAPP."), _debug_level, esp_ssl_debug_error, func_name);
 #endif
-        return 0;
+        DBGLOG(Error, "[BSSL_SSL_Client] Failed while waiting for the engine to enter BR_SSL_SENDAPP -1-!")
+        size = 0;
+        goto end;
     }
+
     // add to the bearssl io buffer, simply appending whatever we want to write
-    size_t alen;
-    unsigned char *br_buf = br_ssl_engine_sendapp_buf(_eng, &alen);
-    size_t cur_idx = 0;
+    br_buf = br_ssl_engine_sendapp_buf(_eng, &alen);
+    cur_idx = 0;
     if (alen == 0)
     {
 #if defined(ESP_SSLCLIENT_ENABLE_DEBUG)
         esp_ssl_debug_print(PSTR("BearSSL returned zero length buffer for sending, did an internal error occur?"), _debug_level, esp_ssl_debug_error, func_name);
 #endif
-        return 0;
+        DBGLOG(Error, "[BSSL_SSL_Client] BearSSL returned zero length buffer for sending, did an internal error occur?")
+        size = 0;
+        goto end;
     }
+
     // while there are still elements to write
     while (cur_idx < size)
     {
@@ -332,13 +369,19 @@ size_t BSSL_SSL_Client::write(const uint8_t *buf, size_t size)
 #if defined(ESP_SSLCLIENT_ENABLE_DEBUG)
                 esp_ssl_debug_print(PSTR("Failed while waiting for the engine to enter BR_SSL_SENDAPP."), _debug_level, esp_ssl_debug_error, func_name);
 #endif
-                return 0;
+                DBGLOG(Error, "[BSSL_SSL_Client] Failed while waiting for the engine to enter BR_SSL_SENDAPP -2-!")
+                size = 0;
+                goto end;
             }
+
             // reset the buffer pointer
             br_buf = br_ssl_engine_sendapp_buf(_eng, &alen);
         }
     }
     // works oky
+
+end:
+    DBGLOG(Info, "[BSSL_SSL_Client] << return: %u", size) 
     return size;
 }
 

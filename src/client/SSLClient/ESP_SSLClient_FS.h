@@ -11,7 +11,7 @@
 #pragma once
 
 // for enable debugging
-#define ESP_SSLCLIENT_ENABLE_DEBUG
+// <MS> #define ESP_SSLCLIENT_ENABLE_DEBUG
 
 /** Call ssl_client.setDebugLevel(x) to set the debug
  * esp_ssl_debug_none = 0
@@ -22,13 +22,13 @@
  */
 
 // for debug port
-#define ESP_SSLCLIENT_DEBUG_PORT Serial
+// <MS> #define ESP_SSLCLIENT_DEBUG_PORT Serial
 
 // for SSL Error String
-#define ESP_SSLCLIENT_ENABLE_SSL_ERROR_STRING
+// <MS> #define ESP_SSLCLIENT_ENABLE_SSL_ERROR_STRING
 
 // for Filesystem support that required for CertStore
-#define ESP_SSLCLIENT_USE_FILESYSTEM
+// <MS> #define ESP_SSLCLIENT_USE_FILESYSTEM
 
 // For external SRAM (PSRAM) support
 #define ESP_SSLCLIENT_USE_PSRAM

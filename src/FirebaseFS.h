@@ -5,7 +5,7 @@
 
 // <MS>
 // To check in using program if correct version of forked library is used.
-#define MS_FIREBASE_ESP_CLIENT_FORK_VERSION_INT 240022600
+#define MS_FIREBASE_ESP_CLIENT_FORK_VERSION_INT 240030500
 
 
 #ifdef __MS__

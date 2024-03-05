@@ -29,19 +29,6 @@
 #define FIREBASE_TCP_Client_H
 
 
-
-// -----------------------------
-// <MS> Logging
-#ifdef MS_FIREBASE_ESP_CLIENT_LOGGING
-#define ESP32DEBUGGING
-#define dbglev MS_FIREBASE_ESP_CLIENT_LOGGING
-#else
-#undef ESP32DEBUGGING
-#endif
-#include "ESP32Logger.h"
-
-
-
 #include <Arduino.h>
 #include "./FB_Error.h"
 #include "./FB_Const.h"
@@ -66,6 +53,21 @@
 #include "WiFiClient.h"
 #define BASE_WIFICLIENT WiFiClient
 #endif
+
+
+
+// -----------------------------
+// <MS> Logging
+#ifdef MS_FIREBASE_ESP_CLIENT_LOGGING
+#define ESP32DEBUGGING
+#define dbglev MS_FIREBASE_ESP_CLIENT_LOGGING
+#else
+#undef ESP32DEBUGGING
+#endif
+#include "ESP32Logger.h"
+
+
+
 
 #pragma GCC diagnostic ignored "-Wdelete-non-virtual-dtor"
 #pragma GCC diagnostic ignored "-Wunused-variable"

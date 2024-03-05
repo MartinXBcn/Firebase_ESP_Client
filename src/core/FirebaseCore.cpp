@@ -30,6 +30,16 @@
 #define FIREBASE_CORE_CPP
 
 
+#include <Arduino.h>
+#include "./mbfs/MB_MCU.h"
+#include "FirebaseCore.h"
+
+
+// <MS>
+#include "ms_General.h"
+#include "ms_Firebase.h"
+
+
 
 // -----------------------------
 // <MS> Logging
@@ -43,16 +53,6 @@
 
 
 
-
-
-#include <Arduino.h>
-#include "./mbfs/MB_MCU.h"
-#include "FirebaseCore.h"
-
-
-// <MS>
-#include "ms_General.h"
-#include "ms_Firebase.h"
 
 
 FirebaseCore::FirebaseCore()

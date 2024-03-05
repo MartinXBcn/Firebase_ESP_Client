@@ -35,20 +35,6 @@
 #define BSSL_SSL_CLIENT_CPP
 
 
-// -----------------------------
-// <MS> Logging
-#ifdef MS_FIREBASE_ESP_CLIENT_LOGGING
-#define ESP32DEBUGGING
-#define MS_LOGGER_LEVEL MS_FIREBASE_ESP_CLIENT_LOGGING
-#else
-#undef ESP32DEBUGGING
-#endif
-#include "ESP32Logger.h"
-
-#include "ms_General.h"
-
-
-
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wvla"
@@ -66,6 +52,22 @@
 #include <umm_malloc/umm_heap_select.h>
 #define ESP_SSLCLIENT_ESP8266_USE_EXTERNAL_HEAP
 #endif
+
+
+
+// -----------------------------
+// <MS> Logging
+#ifdef MS_FIREBASE_ESP_CLIENT_LOGGING
+#define ESP32DEBUGGING
+#define MS_LOGGER_LEVEL MS_FIREBASE_ESP_CLIENT_LOGGING
+#else
+#undef ESP32DEBUGGING
+#endif
+#include "ESP32Logger.h"
+
+#include "ms_General.h"
+
+
 
 #if defined(USE_EMBED_SSL_ENGINE)
 #include <list>

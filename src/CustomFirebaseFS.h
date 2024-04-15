@@ -1,0 +1,4 @@
+
+
+#define FIREBASE_ESP_CLIENT 1
+

@@ -213,11 +213,12 @@
  */
 #define ENABLE_ESP8266_ENC28J60_ETH
 
-#if __has_include("CustomFirebaseFS.h")
-#include "CustomFirebaseFS.h"
+
 #endif
 
 
+#if __has_include("CustomFirebaseFS.h")
+#include "CustomFirebaseFS.h"
 #endif
 
 

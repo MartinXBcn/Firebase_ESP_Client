@@ -3,11 +3,6 @@
 #define FirebaseFS_H
 
 
-// <MS>
-// To check in using program if correct version of forked library is used.
-#define MS_FIREBASE_ESP_CLIENT_FORK_VERSION_INT 240040100
-
-
 #ifdef __MS__
 
 

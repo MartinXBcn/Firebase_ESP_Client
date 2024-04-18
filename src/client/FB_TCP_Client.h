@@ -56,17 +56,28 @@
 
 
 
-// -----------------------------
-// <MS> Logging
+// Logging
+#ifndef MS_FIREBASE_ESP_CLIENT_LOGGING
+#if defined(CONFIG_MS_FIREBASE_ESP_CLIENT_LOGGING_ERROR)
+#define MS_FIREBASE_ESP_CLIENT_LOGGING Error
+#elif defined(CONFIG_MS_FIREBASE_ESP_CLIENT_LOGGING_WARN)
+#define MS_FIREBASE_ESP_CLIENT_LOGGING Warn
+#elif defined(CONFIG_MS_FIREBASE_ESP_CLIENT_LOGGING_INFO)
+#define MS_FIREBASE_ESP_CLIENT_LOGGING Info
+#elif defined(CONFIG_MS_FIREBASE_ESP_CLIENT_LOGGING_DEBUG)
+#define MS_FIREBASE_ESP_CLIENT_LOGGING Debug
+#elif defined(CONFIG_MS_FIREBASE_ESP_CLIENT_LOGGING_VERBOSE)
+#define MS_FIREBASE_ESP_CLIENT_LOGGING Verbose
+#endif
+#endif
 #ifdef MS_FIREBASE_ESP_CLIENT_LOGGING
 #define ESP32DEBUGGING
-#define dbglev MS_FIREBASE_ESP_CLIENT_LOGGING
+#undef MS_LOGGER_LEVEL
+#define MS_LOGGER_LEVEL MS_FIREBASE_ESP_CLIENT_LOGGING
 #else
 #undef ESP32DEBUGGING
 #endif
 #include "ESP32Logger.h"
-
-
 
 
 #pragma GCC diagnostic ignored "-Wdelete-non-virtual-dtor"
@@ -684,7 +695,7 @@ public:
   size_t write(const uint8_t *data, size_t size)
   {
     DBGCOD(char logbuf[1024];)
-    DBGLOG(dbglev, "+++[Firebase_TCP_Client] >> data: %s, size: %u", 
+    DBGLOG(Info, "+++[Firebase_TCP_Client] >> data: %s, size: %u", 
       asCharString(data, 0, logbuf, size > sizeof(logbuf) ? sizeof(logbuf) : size), size)
     int sent = 0;
     int toSend = 0;
@@ -731,7 +742,7 @@ public:
 
   end:
     DBGCHK(Warn, (int)size >= 0, "+++[Firebase_TCP_Client] error: %i", (int)size)
-    DBGLOG(dbglev, "+++[Firebase_TCP_Client] << return: %i", (int)size)
+    DBGLOG(Info, "+++[Firebase_TCP_Client] << return: %i", (int)size)
     return size;
   }
 

@@ -34,18 +34,28 @@
 #include "Firebase.h"
 
 
-
-// -----------------------------
-// <MS> Logging
+// Logging
+#ifndef MS_FIREBASE_ESP_CLIENT_LOGGING
+#if defined(CONFIG_MS_FIREBASE_ESP_CLIENT_LOGGING_ERROR)
+#define MS_FIREBASE_ESP_CLIENT_LOGGING Error
+#elif defined(CONFIG_MS_FIREBASE_ESP_CLIENT_LOGGING_WARN)
+#define MS_FIREBASE_ESP_CLIENT_LOGGING Warn
+#elif defined(CONFIG_MS_FIREBASE_ESP_CLIENT_LOGGING_INFO)
+#define MS_FIREBASE_ESP_CLIENT_LOGGING Info
+#elif defined(CONFIG_MS_FIREBASE_ESP_CLIENT_LOGGING_DEBUG)
+#define MS_FIREBASE_ESP_CLIENT_LOGGING Debug
+#elif defined(CONFIG_MS_FIREBASE_ESP_CLIENT_LOGGING_VERBOSE)
+#define MS_FIREBASE_ESP_CLIENT_LOGGING Verbose
+#endif
+#endif
 #ifdef MS_FIREBASE_ESP_CLIENT_LOGGING
 #define ESP32DEBUGGING
-#define dbglvl MS_FIREBASE_ESP_CLIENT_LOGGING
+#undef MS_LOGGER_LEVEL
+#define MS_LOGGER_LEVEL MS_FIREBASE_ESP_CLIENT_LOGGING
 #else
 #undef ESP32DEBUGGING
 #endif
 #include "ESP32Logger.h"
-
-
 
 
 FIREBASE_CLASS::FIREBASE_CLASS()
@@ -70,7 +80,7 @@ FIREBASE_CLASS::~FIREBASE_CLASS()
 
 void FIREBASE_CLASS::begin(FirebaseConfig *config, FirebaseAuth *auth)
 {
-    DBGLOG(dbglvl, "[FIREBASE_CLASS] >>")
+    DBGLOG(Info, "[FIREBASE_CLASS] >>")
 
     init(config, auth);
 
@@ -123,11 +133,11 @@ void FIREBASE_CLASS::begin(FirebaseConfig *config, FirebaseAuth *auth)
     if (Core.internal.fb_rtoken_requested)
     {
         if (config->signer.tokens.token_type == token_type_oauth2_access_token) {
-            DBGLOG(dbglvl, "[FIREBASE_CLASS] requestTokens(...) ...")
+            DBGLOG(Info, "[FIREBASE_CLASS] requestTokens(...) ...")
             Core.requestTokens(true);
         }
         else {
-            DBGLOG(dbglvl, "[FIREBASE_CLASS] refreshToken(...) ...")
+            DBGLOG(Info, "[FIREBASE_CLASS] refreshToken(...) ...")
             Core.refreshToken();
         }
 
@@ -135,11 +145,11 @@ void FIREBASE_CLASS::begin(FirebaseConfig *config, FirebaseAuth *auth)
         goto end;
     }
 
-    DBGLOG(dbglvl, "[FIREBASE_CLASS] handleToken(...) ...")
+    DBGLOG(Info, "[FIREBASE_CLASS] handleToken(...) ...")
     Core.handleToken();
 
 end:    
-    DBGLOG(dbglvl, "[FIREBASE_CLASS] <<")
+    DBGLOG(Info, "[FIREBASE_CLASS] <<")
 }
 
 struct token_info_t FIREBASE_CLASS::authTokenInfo()

@@ -1,10 +1,5 @@
 
-
-message(INFO "<MS>")
-message(INFO "<MS> Firebase_ESP_Client >>")
-message(INFO "<MS>")
 message(INFO "<MS> CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")
-
 
 set(Firebase_ESP_Client_SRCS 
     src/Firebase.cpp
@@ -334,7 +329,3 @@ idf_component_register(
         ms_Firebase
         TinyGSM
     )
-
-message(INFO "<MS>")
-message(INFO "<MS> Firebase_ESP_Client <<")
-message(INFO "<MS>")
